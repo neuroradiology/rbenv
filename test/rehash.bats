@@ -53,7 +53,7 @@ ruby
 OUT
 }
 
-@test "removes stale shims" {
+@test "removes outdated shims" {
   mkdir -p "${RBENV_ROOT}/shims"
   touch "${RBENV_ROOT}/shims/oldshim1"
   chmod +x "${RBENV_ROOT}/shims/oldshim1"
@@ -65,6 +65,25 @@ OUT
   assert_success ""
 
   assert [ ! -e "${RBENV_ROOT}/shims/oldshim1" ]
+}
+
+@test "do exact matches when removing stale shims" {
+  create_executable "2.0" "unicorn_rails"
+  create_executable "2.0" "rspec-core"
+
+  rbenv-rehash
+
+  cp "$RBENV_ROOT"/shims/{rspec-core,rspec}
+  cp "$RBENV_ROOT"/shims/{rspec-core,rails}
+  cp "$RBENV_ROOT"/shims/{rspec-core,uni}
+  chmod +x "$RBENV_ROOT"/shims/{rspec,rails,uni}
+
+  run rbenv-rehash
+  assert_success ""
+
+  assert [ ! -e "${RBENV_ROOT}/shims/rails" ]
+  assert [ ! -e "${RBENV_ROOT}/shims/rake" ]
+  assert [ ! -e "${RBENV_ROOT}/shims/uni" ]
 }
 
 @test "binary install locations containing spaces" {
@@ -86,15 +105,13 @@ OUT
 }
 
 @test "carries original IFS within hooks" {
-  hook_path="${RBENV_TEST_DIR}/rbenv.d"
-  mkdir -p "${hook_path}/rehash"
-  cat > "${hook_path}/rehash/hello.bash" <<SH
+  create_hook rehash hello.bash <<SH
 hellos=(\$(printf "hello\\tugly world\\nagain"))
 echo HELLO="\$(printf ":%s" "\${hellos[@]}")"
 exit
 SH
 
-  RBENV_HOOK_PATH="$hook_path" IFS=$' \t\n' run rbenv-rehash
+  IFS=$' \t\n' run rbenv-rehash
   assert_success
   assert_output "HELLO=:hello:ugly:world:again"
 }

@@ -31,15 +31,54 @@ create_executable() {
   assert_success "${RBENV_TEST_DIR}/bin/kill-all-humans"
 }
 
+@test "searches PATH for system version (shims prepended)" {
+  create_executable "${RBENV_TEST_DIR}/bin" "kill-all-humans"
+  create_executable "${RBENV_ROOT}/shims" "kill-all-humans"
+
+  PATH="${RBENV_ROOT}/shims:$PATH" RBENV_VERSION=system run rbenv-which kill-all-humans
+  assert_success "${RBENV_TEST_DIR}/bin/kill-all-humans"
+}
+
+@test "searches PATH for system version (shims appended)" {
+  create_executable "${RBENV_TEST_DIR}/bin" "kill-all-humans"
+  create_executable "${RBENV_ROOT}/shims" "kill-all-humans"
+
+  PATH="$PATH:${RBENV_ROOT}/shims" RBENV_VERSION=system run rbenv-which kill-all-humans
+  assert_success "${RBENV_TEST_DIR}/bin/kill-all-humans"
+}
+
+@test "searches PATH for system version (shims spread)" {
+  create_executable "${RBENV_TEST_DIR}/bin" "kill-all-humans"
+  create_executable "${RBENV_ROOT}/shims" "kill-all-humans"
+
+  PATH="${RBENV_ROOT}/shims:${RBENV_ROOT}/shims:/tmp/non-existent:$PATH:${RBENV_ROOT}/shims" \
+    RBENV_VERSION=system run rbenv-which kill-all-humans
+  assert_success "${RBENV_TEST_DIR}/bin/kill-all-humans"
+}
+
+@test "doesn't include current directory in PATH search" {
+  mkdir -p "$RBENV_TEST_DIR"
+  cd "$RBENV_TEST_DIR"
+  touch kill-all-humans
+  chmod +x kill-all-humans
+  PATH="$(path_without "kill-all-humans")" RBENV_VERSION=system run rbenv-which kill-all-humans
+  assert_failure "rbenv: kill-all-humans: command not found"
+}
+
 @test "version not installed" {
   create_executable "2.0" "rspec"
   RBENV_VERSION=1.9 run rbenv-which rspec
-  assert_failure "rbenv: version \`1.9' is not installed"
+  assert_failure "rbenv: version \`1.9' is not installed (set by RBENV_VERSION environment variable)"
 }
 
 @test "no executable found" {
   create_executable "1.8" "rspec"
   RBENV_VERSION=1.8 run rbenv-which rake
+  assert_failure "rbenv: rake: command not found"
+}
+
+@test "no executable found for system version" {
+  PATH="$(path_without "rake")" RBENV_VERSION=system run rbenv-which rake
   assert_failure "rbenv: rake: command not found"
 }
 
@@ -60,15 +99,25 @@ OUT
 }
 
 @test "carries original IFS within hooks" {
-  hook_path="${RBENV_TEST_DIR}/rbenv.d"
-  mkdir -p "${hook_path}/which"
-  cat > "${hook_path}/which/hello.bash" <<SH
+  create_hook which hello.bash <<SH
 hellos=(\$(printf "hello\\tugly world\\nagain"))
 echo HELLO="\$(printf ":%s" "\${hellos[@]}")"
 exit
 SH
 
-  RBENV_HOOK_PATH="$hook_path" IFS=$' \t\n' run rbenv-which anything
+  IFS=$' \t\n' RBENV_VERSION=system run rbenv-which anything
   assert_success
   assert_output "HELLO=:hello:ugly:world:again"
+}
+
+@test "discovers version from rbenv-version-name" {
+  mkdir -p "$RBENV_ROOT"
+  cat > "${RBENV_ROOT}/version" <<<"1.8"
+  create_executable "1.8" "ruby"
+
+  mkdir -p "$RBENV_TEST_DIR"
+  cd "$RBENV_TEST_DIR"
+
+  RBENV_VERSION= run rbenv-which ruby
+  assert_success "${RBENV_ROOT}/versions/1.8/bin/ruby"
 }
