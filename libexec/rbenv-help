@@ -23,7 +23,7 @@ fi
 
 command_path() {
   local command="$1"
-  command -v rbenv-"$command" || command -v rbenv-sh-"$command" || true
+  type -P rbenv-"$command" rbenv-sh-"$command" | head -n1
 }
 
 extract_initial_comment_block() {
@@ -43,7 +43,7 @@ extract_initial_comment_block() {
 
 collect_documentation() {
   local awk
-  awk="$(type -p gawk awk 2>/dev/null | head -1)"
+  awk="$(type -P gawk)" || awk="$(type -P awk)" || true
   if [ -z "$awk" ]; then
     echo "rbenv: cannot find awk" >&2
     return 1
@@ -144,8 +144,40 @@ print_usage() {
   local command="$1"
   local summary usage help
   eval "$(documentation_for "$command")"
-  [ -z "$usage" ] || echo "$usage"
+  if [ -n "$usage" ]; then
+    echo "$usage"
+  else
+    echo "Usage: rbenv ${command}"
+  fi
 }
+
+if [ "$1" = "--complete-commands" ]; then
+  command_prefix="${2:-}"
+  seen=()
+  shopt -s nullglob
+  PATH_remain="$PATH"
+  # traverse PATH to find "rbenv-" prefixed commands
+  while true; do
+    path="${PATH_remain%%:*}"
+    if [ -n "$path" ]; then
+      for rbenv_command in "${path}/rbenv-"*; do
+        command_name="${rbenv_command##*/}"
+        command_name="${command_name#rbenv-}"
+        command_name="${command_name#sh-}"
+        [[ $command_name == "${command_prefix}"* ]] || continue
+        [[ " ${seen[*]} " != *" ${command_name} "* ]] || continue
+        seen+=("$command_name")
+        summary=""
+        eval "$(extract_initial_comment_block < "$rbenv_command" | collect_documentation)"
+        [ -n "$summary" ] || continue
+        printf "%s:%s\n" "$command_name" "$summary"
+      done
+    fi
+    [[ $PATH_remain == *:* ]] || break
+    PATH_remain="${PATH_remain#*:}"
+  done
+  exit 0
+fi
 
 unset usage
 if [ "$1" = "--usage" ]; then
@@ -154,11 +186,17 @@ if [ "$1" = "--usage" ]; then
 fi
 
 if [ -z "$1" ] || [ "$1" == "rbenv" ]; then
-  echo "Usage: rbenv <command> [<args>]"
-  [ -z "$usage" ] || exit
+  if [ -z "$usage" ] && [ -t 1 ] && type -P man >/dev/null; then
+    MANPATH="${BASH_SOURCE%/*}/../share/man:$MANPATH" exec man rbenv
+  fi
+  echo "Usage: rbenv <command> [<args>...]"
+  [ -n "$usage" ] && exit
   echo
-  echo "Some useful rbenv commands are:"
-  print_summaries commands local global shell install uninstall rehash version versions which whence
+  echo "Commands to manage available Ruby versions:"
+  print_summaries versions install uninstall rehash
+  echo
+  echo "Commands to view or change the current Ruby version:"
+  print_summaries version local global shell
   echo
   echo "See \`rbenv help <command>' for information on a specific command."
   echo "For full documentation, see: https://github.com/rbenv/rbenv#readme"

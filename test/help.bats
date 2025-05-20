@@ -5,8 +5,14 @@ load test_helper
 @test "without args shows summary of common commands" {
   run rbenv-help
   assert_success
-  assert_line "Usage: rbenv <command> [<args>]"
-  assert_line "Some useful rbenv commands are:"
+  assert_line "Usage: rbenv <command> [<args>...]"
+  assert_line "Commands to manage available Ruby versions:"
+}
+
+@test "usage flag" {
+  run rbenv-help --usage
+  assert_success
+  assert_output "Usage: rbenv <command> [<args>...]"
 }
 
 @test "invalid command" {
@@ -63,6 +69,18 @@ SH
 
   run rbenv-help --usage hello
   assert_success "Usage: rbenv hello <world>"
+}
+
+@test "empty usage section" {
+  mkdir -p "${RBENV_TEST_DIR}/bin"
+  cat > "${RBENV_TEST_DIR}/bin/rbenv-hello" <<SH
+#!shebang
+# Summary: Says "hello" to you, from rbenv
+echo hello
+SH
+
+  run rbenv-help --usage hello
+  assert_success "Usage: rbenv hello"
 }
 
 @test "multiline usage section" {
